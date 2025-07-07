@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>E-commerce API Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; background: #f8f9fa; color: #222; }
+    h1 { color: #007bff; }
+    .section { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 2em; margin-bottom: 2em; max-width: 500px; }
+    input, button, select { margin: 0.5em 0; padding: 0.5em; border-radius: 4px; border: 1px solid #ccc; font-size: 1em; }
+    button { background: #007bff; color: #fff; border: none; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #0056b3; }
+    ul { padding-left: 1.2em; }
+    li { margin-bottom: 0.5em; }
+    #products ul, #cart ul, #orders ul { list-style: disc inside; }
+    #reg-msg, #login-msg, #admin-msg, #order-msg { color: #d9534f; font-weight: bold; margin-left: 1em; }
+    .hidden { display: none !important; }
+    /* Orders Styling */
+    .orders-list { display: flex; flex-direction: column; gap: 1em; }
+    .order-card { background: #f1f3f6; border-radius: 8px; box-shadow: 0 1px 4px #0001; padding: 1em 1.5em; }
+    .order-header { font-weight: bold; color: #007bff; margin-bottom: 0.5em; display: flex; justify-content: space-between; align-items: center; }
+    .order-date { color: #888; font-size: 0.95em; font-weight: normal; }
+    .order-items { margin: 0; padding-left: 1.2em; }
+    .order-items li { margin-bottom: 0.2em; }
+    .order-qty { color: #555; font-size: 0.95em; margin-left: 0.5em; }
+    .no-orders { color: #888; font-style: italic; }
+    .hidden-product { opacity: 0.5; text-decoration: line-through; }
+    @media (max-width: 600px) {
+      .section { padding: 1em; max-width: 100%; }
+      body { margin: 0.5em; }
+      .order-card { padding: 0.7em 0.5em; }
+    }
+  </style>
+</head>
+<body>
+  <h1>E-commerce API Demo</h1>
+
+  <div class="section">
+    <h2>Register</h2>
+    <input id="reg-username" placeholder="Username">
+    <input id="reg-password" type="password" placeholder="Password">
+    <select id="reg-role">
+      <option value="customer">Customer</option>
+      <option value="admin">Admin</option>
+    </select>
+    <button onclick="register()">Register</button>
+    <span id="reg-msg"></span>
+  </div>
+
+
+  <div class="section">
+    <h2>Login</h2>
+    <input id="login-username" placeholder="Username">
+    <input id="login-password" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <button id="logout-btn" class="hidden" onclick="logout()">Logout</button>
+    <span id="login-msg"></span>
+  </div>
+
+  <div class="section">
+    <h2>Product List</h2>
+    <button onclick="fetchProducts()">Load Products</button>
+    <input id="search" placeholder="Search name">
+    <input id="category" placeholder="Category">
+    <button onclick="searchProducts()">Search</button>
+    <div id="products"></div>
+  </div>
+
+  <div class="section hidden" id="cart-section">
+    <h2>Cart</h2>
+    <button onclick="fetchCart()">View Cart</button>
+    <div id="cart"></div>
+    <button onclick="placeOrder()">Place Order</button>
+    <span id="order-msg"></span>
+  </div>
+
+  <div class="section hidden" id="admin-section">
+    <h2>Add Product (Admin)</h2>
+    <input id="prod-name" placeholder="Name">
+    <input id="prod-price" placeholder="Price" type="number">
+    <input id="prod-category" placeholder="Category">
+    <button onclick="addProduct()">Add Product</button>
+    <span id="admin-msg"></span>
+  </div>
+
+  <div class="section hidden" id="orders-section">
+    <h2>My Orders</h2>
+    <div id="orders"></div>
+  </div>
+
+  <script>
+    let token = '';
+    let role = '';
+
+    // Utility to show/hide sections using .hidden class
+    function showSection(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+    function hideSection(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    // On page load, hide all role-based sections
+    window.onload = function() {
+      hideSection('cart-section');
+      hideSection('admin-section');
+      hideSection('orders-section');
+      document.getElementById('reg-msg').innerText = '';
+      document.getElementById('login-msg').innerText = '';
+      document.getElementById('admin-msg').innerText = '';
+      document.getElementById('order-msg').innerText = '';
+    };
+
+    function register() {
+      fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('reg-username').value,
+          password: document.getElementById('reg-password').value,
+          role: document.getElementById('reg-role').value
+        })
+      })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('reg-msg').innerText = d.message || JSON.stringify(d);
+      })
+      .catch(e => {
+        document.getElementById('reg-msg').innerText = 'Registration failed.';
+      });
+    }
+
+    function login() {
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('login-username').value,
+          password: document.getElementById('login-password').value
+        })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.token) {
+          token = d.token;
+          role = parseJwt(token).role;
+          document.getElementById('login-msg').innerText = 'Login successful!';
+          // Hide all role-based sections first
+          hideSection('cart-section');
+          hideSection('admin-section');
+          hideSection('orders-section');
+          document.getElementById('logout-btn').classList.remove('hidden');
+          fetchProducts(); // Auto reload product list on login
+          if (role === 'admin') {
+            showSection('admin-section');
+          }
+          if (role === 'customer') {
+            showSection('cart-section');
+            showSection('orders-section');
+            fetchCart();
+            fetchOrders();
+          }
+        } else {
+          document.getElementById('login-msg').innerText = d.message || JSON.stringify(d);
+        }
+      })
+      .catch(e => {
+        document.getElementById('login-msg').innerText = 'Login failed.';
+      });
+    }
+
+    function logout() {
+      token = '';
+      role = '';
+      hideSection('cart-section');
+      hideSection('admin-section');
+      hideSection('orders-section');
+      document.getElementById('logout-btn').classList.add('hidden');
+      document.getElementById('login-msg').innerText = 'Logged out.';
+      document.getElementById('login-username').value = '';
+      document.getElementById('login-password').value = '';
+    }
+
+    function fetchProducts() {
+      fetch('/api/products')
+        .then(res => res.json())
+        .then(data => {
+          const list = data.products.map(p => renderProductItem(p)).join('');
+          document.getElementById('products').innerHTML = `<ul>${list}</ul>`;
+        })
+        .catch(e => {
+          document.getElementById('products').innerText = 'Failed to load products.';
+        });
+    }
+
+    function searchProducts() {
+      const search = document.getElementById('search').value;
+      const category = document.getElementById('category').value;
+      fetch(`/api/products?search=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`)
+        .then(res => res.json())
+        .then(data => {
+          const list = data.products.map(p => renderProductItem(p)).join('');
+          document.getElementById('products').innerHTML = `<ul>${list}</ul>`;
+        })
+        .catch(e => {
+          document.getElementById('products').innerText = 'Search failed.';
+        });
+    }
+
+    function renderProductItem(p) {
+      if (role === 'admin') {
+        return `<li id="product-li-${p.id}">
+          <span id="product-view-${p.id}">${p.name} - $${p.price} [${p.category}]</span>
+          <button onclick="showEditProduct(${p.id}, '${encodeURIComponent(p.name)}', ${p.price}, '${encodeURIComponent(p.category)}')">Edit</button>
+          <button onclick="deleteProduct(${p.id})">Delete</button>
+        </li>`;
+      } else {
+        return `<li>${p.name} - $${p.price} [${p.category}] <button onclick='addToCart(${p.id})'>Add to Cart</button></li>`;
+      }
+    }
+
+
+
+    function showEditProduct(id, name, price, category) {
+      // Decode URI components
+      name = decodeURIComponent(name);
+      category = decodeURIComponent(category);
+      const li = document.getElementById('product-li-' + id);
+      li.innerHTML = `
+        <form onsubmit="event.preventDefault(); editProduct(${id})">
+          <input id="edit-name-${id}" value="${name}" required>
+          <input id="edit-price-${id}" type="number" value="${price}" required style="width:80px;">
+          <input id="edit-category-${id}" value="${category}" required>
+          <button type="submit">Save</button>
+          <button type="button" onclick="cancelEditProduct(${id}, '${encodeURIComponent(name)}', ${price}, '${encodeURIComponent(category)}')">Cancel</button>
+        </form>
+      `;
+    }
+
+    function cancelEditProduct(id, name, price, category) {
+      // Restore the original view
+      const li = document.getElementById('product-li-' + id);
+      name = decodeURIComponent(name);
+      category = decodeURIComponent(category);
+      li.innerHTML = `
+        <span id="product-view-${id}">${name} - $${price} [${category}]</span>
+        <button onclick="showEditProduct(${id}, '${encodeURIComponent(name)}', ${price}, '${encodeURIComponent(category)}')">Edit</button>
+        <button onclick="deleteProduct(${id})">Delete</button>
+      `;
+    }
+
+    function editProduct(id) {
+      const name = document.getElementById('edit-name-' + id).value;
+      const price = document.getElementById('edit-price-' + id).value;
+      const category = document.getElementById('edit-category-' + id).value;
+      fetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ name, price, category })
+      })
+      .then(r => r.json())
+      .then(d => {
+        fetchProducts();
+      })
+      .catch(e => {
+        alert('Edit failed.');
+      });
+    }
+
+    function deleteProduct(id) {
+      if (!confirm('Are you sure you want to delete this product?')) return;
+      fetch(`/api/products/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(r => r.json())
+      .then(d => {
+        fetchProducts();
+      })
+      .catch(e => {
+        alert('Delete failed.');
+      });
+    }
+
+    function addProduct() {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          name: document.getElementById('prod-name').value,
+          price: document.getElementById('prod-price').value,
+          category: document.getElementById('prod-category').value
+        })
+      })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('admin-msg').innerText = d.message || JSON.stringify(d);
+        fetchProducts();
+      })
+      .catch(e => {
+        document.getElementById('admin-msg').innerText = 'Add product failed.';
+      });
+    }
+
+    function addToCart(productId) {
+      if (!token || role !== 'customer') {
+        alert('Login as customer to add to cart');
+        return;
+      }
+      fetch('/api/cart/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ productId, quantity: 1 })
+      })
+      .then(r => r.json())
+      .then(d => {
+        alert(d.message || JSON.stringify(d));
+        fetchCart();
+      })
+      .catch(e => {
+        alert('Add to cart failed.');
+      });
+    }
+
+    function fetchCart() {
+      fetch('/api/cart', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(r => r.json())
+      .then(cart => {
+        if (cart.items && cart.items.length) {
+          let total = 0;
+          const list = cart.items.map(i => {
+            const price = i.price || 0;
+            total += price * i.quantity;
+            return `<li>Product ID: ${i.product_id || i.productId}, Qty: 
+              <button onclick="updateCartQuantity(${i.product_id || i.productId}, ${i.quantity - 1})">-</button>
+              <span style='margin:0 8px;'>${i.quantity}</span>
+              <button onclick="updateCartQuantity(${i.product_id || i.productId}, ${i.quantity + 1})">+</button>
+              , Price: $${price} <button onclick='removeFromCart(${i.product_id || i.productId})'>Remove</button>
+              <span style='margin-left:1em;font-weight:bold;'>Subtotal: $${(price * i.quantity).toFixed(2)}</span>
+            </li>`;
+          }).join('');
+          document.getElementById('cart').innerHTML = `<ul>${list}</ul><div style='margin-top:1em;font-weight:bold;'>Total: $${total.toFixed(2)}</div>`;
+        } else {
+          document.getElementById('cart').innerText = 'Cart is empty.';
+        }
+      })
+      .catch(e => {
+        document.getElementById('cart').innerText = 'Failed to load cart.';
+      });
+    }
+
+    // Update cart item quantity
+    function updateCartQuantity(productId, quantity) {
+      // Allow quantity to go to 0 (removes item in backend)
+      fetch('/api/cart/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ productId, quantity })
+      })
+      .then(r => r.json())
+      .then(d => {
+        fetchCart();
+      })
+      .catch(e => {
+        alert('Update quantity failed.');
+      });
+    }
+
+    function removeFromCart(productId) {
+      fetch(`/api/cart/remove/${productId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(r => r.json())
+      .then(d => {
+        alert(d.message || JSON.stringify(d));
+        fetchCart();
+      })
+      .catch(e => {
+        alert('Remove from cart failed.');
+      });
+    }
+
+    function placeOrder() {
+      fetch('/api/cart/order', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then (r => r.json())
+      .then(d => {
+        document.getElementById('order-msg').innerText = d.message || JSON.stringify(d);
+        fetchCart();
+        setTimeout(fetchOrders, 300); // Ensure orders are refreshed after DB update
+      })
+      .catch(e => {
+        document.getElementById('order-msg').innerText = 'Order failed.';
+      });
+    }
+
+    function fetchOrders() {
+      fetch('/api/orders', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(r => r.json())
+      .then(orders => {
+        let html = '';
+        if (orders.length) {
+          html += '<div class="orders-list">' + orders.map(o => `
+            <div class="order-card">
+              <div class="order-header">Order #${o.id} <span class="order-date">${o.date}</span></div>
+              <ul class="order-items">${o.items.map(i => `<li>${i.name || 'Product'} <span class="order-qty">x${i.quantity}</span></li>`).join('')}</ul>
+            </div>
+          `).join('') + '</div>';
+        } else {
+          html += '<div class="no-orders">No orders yet.</div>';
+        }
+        document.getElementById('orders').innerHTML = html;
+      })
+      .catch(e => {
+        document.getElementById('orders').innerText = 'Failed to load orders.';
+      });
+    }
+
+    function parseJwt(token) {
+      try {
+        return JSON.parse(atob(token.split('.')[1]));
+      } catch (e) {
+        return {};
+      }
+    }
+  </script>
+</body>
+</html>
